@@ -1,12 +1,18 @@
 #include <curses.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 /*************************************************************************
  * macros
  ************************************************************************/
 #define TT_NAME_SZ 80
 #define MAX_TIMETRACKERS 20
+#define TO_STR_HELPER(x) #x
+#define TO_STR(x) TO_STR_HELPER(x)
 
 /*************************************************************************
  * types
@@ -38,14 +44,29 @@ struct timetracker {
  *			0 if no timetrackers were created,
  *			the number of timetrackers created otherwise.
  */
-static int parse_timetracker(const char *line,
+static int parse_timetracker(char *line,
 			     struct timetracker *timetracker)
 {
+	int len, res;
 	int seconds = 0;
+	// reject comments
 	if (line[0] == '#')
 		return 0;
-	if (sscanf(line, "%" TO_STR(TT_NAME_SZ) "s=%dM",
-			timetracker->name, seconds) != 2) {
+
+	// reject empty lines
+        len = strlen(line);
+        if (len < 1)
+		return 0;
+
+	// trim newline if present
+        if (line[len - 1] == '\n') {
+		line[len - 1] = '\0';
+		len--;
+	}
+	res = sscanf(line, "%" TO_STR(TT_NAME_SZ) "[^=]=%dM",
+			timetracker->name, &seconds);
+	if (res != 2) {
+                printf("res = %d\n", res);
 		return -1000;
 	}
 	timetracker->running = 0;
@@ -67,7 +88,6 @@ static struct timetracker *get_timetrackers(const char *filename)
 	FILE *f;
 	struct timetracker *ret;
 	int num_tt, line_no;
-	time_t now;
 
 	f = fopen(filename, "r");
 	if (!f) {
@@ -86,6 +106,7 @@ static struct timetracker *get_timetrackers(const char *filename)
 	}
 	while (1) {
 		char line[160];
+                int out;
 		const char *res = fgets(line, sizeof(line), f);
 		line_no++;
 		if (! res) {
@@ -96,7 +117,7 @@ static struct timetracker *get_timetrackers(const char *filename)
 			fprintf(stderr, "%s: fgets error on line %d: "
 				"%s (%d)\n",
 				__func__, line_no, strerror(err), err);
-			goto cleanup;
+			goto cleanup2;
 		}
 
 		if (num_tt >= MAX_TIMETRACKERS) {
@@ -104,14 +125,14 @@ static struct timetracker *get_timetrackers(const char *filename)
 				__func__);
 			goto cleanup2;
 		}
-		res = parse_timetracker(line, ret + num_tt);
-		if (res < 0) {
-			fprintf(stderr, "%s: failed to parse line %d\n",
-				__func__, line_no);
+		out = parse_timetracker(line, ret + num_tt);
+		if (out < 0) {
+			fprintf(stderr, "%s: failed to parse line %d (%s)\n",
+				__func__, line_no, line);
 			goto cleanup2;
 		}
-		else if (res > 0) {
-			num_tt += res;
+		else if (out > 0) {
+			num_tt += out;
 		}
 	}
 	if (fclose(f)) {
@@ -145,14 +166,14 @@ cleanup0:
  * @param fmt		printf-style formatting string
  * @param ...		Format arguments
  */
-void mvaddstr_printf(WINDOW *win, int y, int x, const char **fmt, ...)
+void mvaddstr_printf(WINDOW *win, int y, int x, const char *fmt, ...)
 {
 	char str[160];
 	va_list ap;
 	va_start(ap, fmt);
 	vsnprintf(str, sizeof(str), fmt, ap);
 	va_end(ap);
-	mvwaddstr(y, x, str);
+	mvwaddstr(win, y, x, str);
 }
 
 /** Draws all timetrackers on the screen.
@@ -162,29 +183,31 @@ void mvaddstr_printf(WINDOW *win, int y, int x, const char **fmt, ...)
  */
 static void draw_timetrackers(WINDOW *win, struct timetracker *timetracker)
 {
-	int idx = 1;
 	int line_no = 2;
 	time_t cur_time = time(NULL);
 
 	clear();
-	for (, timetracker->name[0], timetracker++) {
+	for (; timetracker->name[0]; timetracker++) {
 		time_t rem;
-		if (! timetracker->running) {
+                int min, sec;
+		if (!timetracker->running) {
 			rem = timetracker->remaining_seconds;
 		}
-		else if (finish_time < cur_time) {
+		else if (timetracker->finish_time < cur_time) {
 			timetracker->remaining_seconds = 0;
 			timetracker->running = 0;
 			rem = 0;
 		}
 		else {
-			rem = finish_time - cur_time;
+			rem = timetracker->finish_time - cur_time;
 		}
 		min = rem / 60;
 		sec = rem - (min * 60);
 		mvaddstr_printf(win, line_no, 3, "%d:%02d       %s",
 				min, sec, timetracker->name);
+                line_no += 2;
 	}
+	mvwaddstr(win, 0, 0, " ");
 }
 
 static void shutdown_curses(void)
