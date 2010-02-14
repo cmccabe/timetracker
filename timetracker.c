@@ -35,6 +35,48 @@ struct timetracker {
 /*************************************************************************
  * functions
  ************************************************************************/
+/** Turns off a timetracker
+ *
+ * @param timetracker		the timetracker
+ *
+ * @return			0 on success; error code otherwise
+ */
+static int timetracker_off(struct timetracker *timetracker)
+{
+	time_t cur_time;
+	if (! timetracker->running)
+		return 0;
+	cur_time = time(NULL);
+	if (timetracker->finish_time <= cur_time) {
+		timetracker->remaining_seconds = 0;
+		timetracker->running = 0;
+		timetracker->finish_time = 0;
+		return 0;
+	}
+	timetracker->remaining_seconds = timetracker->finish_time - cur_time;
+	timetracker->running = 0;
+	timetracker->finish_time = 0;
+	return 0;
+}
+
+/** Turns on a timetracker
+ *
+ * @param timetracker		the timetracker
+ *
+ * @return			0 on success; error code otherwise
+ */
+static int timetracker_on(struct timetracker *timetracker)
+{
+	time_t cur_time;
+	if (timetracker->running)
+		return 0;
+	cur_time = time(NULL);
+	timetracker->finish_time = cur_time + timetracker->remaining_seconds;
+	timetracker->running = 1;
+	timetracker->remaining_seconds = 0;
+	return 0;
+}
+
 /** Parse a line in a timetracker file
  *
  * @param line		The line to parse
@@ -66,7 +108,6 @@ static int parse_timetracker(char *line,
 	res = sscanf(line, "%" TO_STR(TT_NAME_SZ) "[^=]=%dM",
 			timetracker->name, &seconds);
 	if (res != 2) {
-                printf("res = %d\n", res);
 		return -1000;
 	}
 	timetracker->running = 0;
@@ -78,12 +119,13 @@ static int parse_timetracker(char *line,
 /** Parse the config options, which are provided as environment variables.
  *
  * @param filename	The name of the configuration file to use
+ * @param timetrackers	(out param) A handle to an array of timetrackers
+ * @param num_trackers	(out param) The number of timetrackers in the array
  *
- * @return		A pointer to an array of timetrackers. The last
- *			tracker will have name[0] set to the empty string.
- *			NULL will be returned on error.
+ * @return		0 on success; error code otherwise
  */
-static struct timetracker *get_timetrackers(const char *filename)
+static int get_timetrackers(const char *filename,
+	struct timetracker **timetrackers, int *num_trackers)
 {
 	FILE *f;
 	struct timetracker *ret;
@@ -148,14 +190,16 @@ static struct timetracker *get_timetrackers(const char *filename)
 	}
 	// explicitly zero the name of the last entry.
 	ret[num_tt].name[0] = '\0';
-	return ret;
+	*num_trackers = num_tt;
+	*timetrackers = ret;
+	return 0;
 
 cleanup2:
 	fclose(f);
 cleanup1:
 	free(ret);
 cleanup0:
-	return NULL;
+	return 1;
 }
 
 /** Wrapper around mvaddstr that provides printf formatting semantics.
@@ -194,8 +238,7 @@ static void draw_timetrackers(WINDOW *win, struct timetracker *timetracker)
 			rem = timetracker->remaining_seconds;
 		}
 		else if (timetracker->finish_time < cur_time) {
-			timetracker->remaining_seconds = 0;
-			timetracker->running = 0;
+			timetracker_off(timetracker);
 			rem = 0;
 		}
 		else {
@@ -203,7 +246,7 @@ static void draw_timetrackers(WINDOW *win, struct timetracker *timetracker)
 		}
 		min = rem / 60;
 		sec = rem - (min * 60);
-		mvaddstr_printf(win, line_no, 3, "%d:%02d       %s",
+		mvaddstr_printf(win, line_no, 3, "%3d:%02d       %s",
 				min, sec, timetracker->name);
                 line_no += 2;
 	}
@@ -235,8 +278,8 @@ static WINDOW *init_curses(void)
 		return NULL;
 	noecho();
 	intrflush(stdscr, FALSE);
-	halfdelay(100);
-	timeout(1);
+	halfdelay(1);
+	//timeout(1);
 	keypad(stdscr, TRUE);
 	clear();
 
@@ -262,6 +305,7 @@ int main(int argc, char **argv)
 	const char *conf_file = NULL;
 	WINDOW *win;
 	struct timetracker *timetrackers;
+	int num_timetrackers;
         chtype k;
 
 	while ((c = getopt(argc, argv, "f:h")) != -1) {
@@ -294,8 +338,7 @@ int main(int argc, char **argv)
 	}
 
 	// parse config options
-	timetrackers = get_timetrackers(conf_file);
-	if (! timetrackers) {
+	if (get_timetrackers(conf_file, &timetrackers, &num_timetrackers)) {
 		fprintf(stderr, "error initializing timetrackers.\n");
 		exit(1);
 	}
@@ -311,6 +354,15 @@ int main(int argc, char **argv)
 		k = getch();
 		if (k == 'q')
 			exit(0);
+                if (k >= '1' && k <= '9') {
+			int n = k - '1';
+			if (n < num_timetrackers) {
+				if (timetrackers[n].running)
+					timetracker_off(timetrackers + n);
+				else
+					timetracker_on(timetrackers + n);
+			}
+                }
 	}
 	return 0;
 }
