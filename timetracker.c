@@ -90,7 +90,7 @@ static int parse_timetracker(char *line,
 			     struct timetracker *timetracker)
 {
 	int len, res;
-	int seconds = 0;
+	int minutes;
 	// reject comments
 	if (line[0] == '#')
 		return 0;
@@ -106,12 +106,12 @@ static int parse_timetracker(char *line,
 		len--;
 	}
 	res = sscanf(line, "%" TO_STR(TT_NAME_SZ) "[^=]=%dM",
-			timetracker->name, &seconds);
+			timetracker->name, &minutes);
 	if (res != 2) {
 		return -1000;
 	}
 	timetracker->running = 0;
-	timetracker->remaining_seconds = seconds;
+	timetracker->remaining_seconds = minutes * 60;
 	timetracker->finish_time = 0;
 	return 1;
 }
