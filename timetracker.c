@@ -227,7 +227,7 @@ void mvaddstr_printf(WINDOW *win, int y, int x, const char *fmt, ...)
  */
 static void draw_timetrackers(WINDOW *win, struct timetracker *timetracker)
 {
-	int line_no = 2;
+	int item_no = 1, line_no = 2;
 	time_t cur_time = time(NULL);
 
 	clear();
@@ -246,9 +246,11 @@ static void draw_timetrackers(WINDOW *win, struct timetracker *timetracker)
 		}
 		min = rem / 60;
 		sec = rem - (min * 60);
-		mvaddstr_printf(win, line_no, 3, "%3d:%02d       %s",
-				min, sec, timetracker->name);
+		mvaddstr_printf(win, line_no, 3,
+			" [%d]    %3d:%02d       %s",
+			item_no, min, sec, timetracker->name);
                 line_no += 2;
+		item_no++;
 	}
 	mvwaddstr(win, 0, 0, " ");
 }
