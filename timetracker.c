@@ -10,7 +10,7 @@
  * macros
  ************************************************************************/
 #define TT_NAME_SZ 80
-#define MAX_TIMETRACKERS 20
+#define MAX_TIMETRACKERS 9
 #define TO_STR_HELPER(x) #x
 #define TO_STR(x) TO_STR_HELPER(x)
 
@@ -30,6 +30,30 @@ struct timetracker {
 	/** When running = 1, this is the time when the timer will be
 	 * finished. */
 	time_t finish_time;
+};
+
+/** Represents a timetracker color */
+struct tt_color {
+	int fg, bg;
+};
+
+/** Names a timetracker color */
+enum tt_color_name {
+	TT_COLOR_NORMAL = 1,
+	TT_COLOR_RUNNING = 2,
+	TT_COLOR_DONE = 3,
+	TT_COLOR_MAX,
+};
+
+/*************************************************************************
+ * globals
+ ************************************************************************/
+/** Nonzero if we are drawing colors */
+int g_use_color;
+
+const static struct tt_color tt_colors[TT_COLOR_MAX] = {
+	[ TT_COLOR_NORMAL ] = { COLOR_BLACK, COLOR_WHITE },
+	[ TT_COLOR_RUNNING ] = { COLOR_GREEN, COLOR_WHITE },
 };
 
 /*************************************************************************
@@ -234,6 +258,7 @@ static void draw_timetrackers(WINDOW *win, struct timetracker *timetracker)
 	for (; timetracker->name[0]; timetracker++) {
 		time_t rem;
                 int min, sec;
+		int tt_color = COLOR_PAIR(TT_COLOR_NORMAL);
 		if (!timetracker->running) {
 			rem = timetracker->remaining_seconds;
 		}
@@ -246,10 +271,18 @@ static void draw_timetrackers(WINDOW *win, struct timetracker *timetracker)
 		}
 		min = rem / 60;
 		sec = rem - (min * 60);
+		if (g_use_color) {
+			if (timetracker->running)
+				tt_color = COLOR_PAIR(TT_COLOR_RUNNING);
+			attron(tt_color);
+		}
 		mvaddstr_printf(win, line_no, 3,
 			" [%d]    %3d:%02d       %s",
 			item_no, min, sec, timetracker->name);
-                line_no += 2;
+		if (g_use_color) {
+			attroff(tt_color);
+		}
+		line_no += 2;
 		item_no++;
 	}
 	mvwaddstr(win, 0, 0, " ");
@@ -259,6 +292,33 @@ static void shutdown_curses(void)
 {
 	clear();
 	endwin();
+}
+
+/** Initialize colors in the curses library
+ *
+ * @return		0 on success; error code otherwise
+ */
+static int timetracker_init_color(void)
+{
+	size_t i;
+	if (assume_default_colors(COLOR_BLACK, COLOR_WHITE)) {
+		fprintf(stderr, "%s: your terminal does not support "
+			"assume_default_colors. Avoiding color because it "
+			"would probably look ugly.\n", __func__);
+		return 1000;
+	}
+	if (start_color() == ERR) {
+		fprintf(stderr, "%s: start_color failed.\n", __func__);
+		return 1001;
+	}
+	for (i = 1; i < TT_COLOR_MAX; i++) {
+		const struct tt_color *c = tt_colors + i;
+		if (init_pair(i, c->fg, c->bg) == ERR) {
+			fprintf(stderr, "%s: init_pair(%d) failed.\n",
+				__func__, i);
+		}
+	}
+	return 0;
 }
 
 /** Initialize curses
@@ -278,6 +338,16 @@ static WINDOW *init_curses(void)
 	ret = initscr();
 	if (! ret)
 		return NULL;
+	if (g_use_color) {
+		int res = timetracker_init_color();
+		if (res) {
+			g_use_color = 0;
+			fprintf(stderr, "%s: start_color failed with "
+				"error code %d. Does this terminal "
+				"support color?\n", __func__, res);
+		}
+	}
+
 	noecho();
 	intrflush(stdscr, FALSE);
 	halfdelay(1);
@@ -298,6 +368,7 @@ usage: timetracker [options]\n\
 options include:\n\
 -f [conf file]           The configuration file to use\n\
 -h                       Print this help message and quit\n\
+-N                       Do *not* try to use color\n\
 ");
 }
 
@@ -309,8 +380,9 @@ int main(int argc, char **argv)
 	struct timetracker *timetrackers;
 	int num_timetrackers;
         chtype k;
+	g_use_color = 1;
 
-	while ((c = getopt(argc, argv, "f:h")) != -1) {
+	while ((c = getopt(argc, argv, "f:hN")) != -1) {
 		switch(c) {
 		case 'f':
 			conf_file = optarg;
@@ -320,6 +392,10 @@ int main(int argc, char **argv)
 			usage();
 			exit(1);
 			break;
+		case 'N':
+			g_use_color = 0;
+			break;
+
 		case ':':
 			fprintf(stderr,
 				"Option -%c requires an operand\n", optopt);
