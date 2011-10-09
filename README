@@ -1,0 +1,7 @@
+This is an extremely simple curses-based program that displays multiple
+stopwatches on the screen. I use it sometimes for tracking how I'm spending my
+time.
+
+The license is Apache 2.0. See LICENSE for details.
+
+Colin Patrick McCabe
