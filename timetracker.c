@@ -314,7 +314,7 @@ static int timetracker_init_color(void)
 	for (i = 1; i < TT_COLOR_MAX; i++) {
 		const struct tt_color *c = tt_colors + i;
 		if (init_pair(i, c->fg, c->bg) == ERR) {
-			fprintf(stderr, "%s: init_pair(%d) failed.\n",
+			fprintf(stderr, "%s: init_pair(%Zd) failed.\n",
 				__func__, i);
 		}
 	}
